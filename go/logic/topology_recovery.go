@@ -14,6 +14,39 @@
    limitations under the License.
 */
 
+/*
+Package logic 实现了 Orchestrator 的核心业务逻辑，特别是拓扑恢复功能。
+
+该包提供以下主要功能：
+
+1. 故障检测和分析
+   - 检测各种类型的故障场景（主库故障、中间主库故障等）
+   - 基于多个观察点进行可靠的故障判断
+   - 避免因网络分区导致的误判
+
+2. 自动故障恢复
+   - 支持基于 GTID 的故障恢复
+   - 支持基于 Pseudo-GTID 的故障恢复
+   - 支持基于 Binlog Server 的故障恢复
+   - 智能选择最佳的恢复候选者
+
+3. 手动拓扑操作
+   - 优雅的主库切换
+   - 强制故障转移
+   - 复制关系重构
+
+4. 恢复策略管理
+   - 防抖动机制
+   - 恢复确认和阻塞
+   - 自定义恢复钩子
+
+5. 高可用支持
+   - Raft 一致性协议集成
+   - 多节点协调
+   - 防脑裂机制
+
+该模块是 Orchestrator 最关键的部分，负责保证 MySQL 拓扑的高可用性。
+*/
 package logic
 
 import (
@@ -41,13 +74,22 @@ import (
 	"github.com/rcrowley/go-metrics"
 )
 
+// countPendingRecoveries 跟踪当前待处理的恢复操作数量
+// 使用原子操作确保并发安全
 var countPendingRecoveries int64
 
+// RecoveryType 定义了恢复操作的类型
+// 用于区分不同类型的故障恢复场景
 type RecoveryType string
 
 const (
-	MasterRecovery                 RecoveryType = "MasterRecovery"
-	CoMasterRecovery                            = "CoMasterRecovery"
+	// MasterRecovery 主库故障恢复
+	// 当主库不可用时，需要提升一个从库为新主库
+	MasterRecovery RecoveryType = "MasterRecovery"
+
+	// CoMasterRecovery 双主配置中的故障恢复
+	// 当双主配置中的一个主库故障时的恢复操作
+	CoMasterRecovery = "CoMasterRecovery"
 	IntermediateMasterRecovery                  = "IntermediateMasterRecovery"
 	ReplicationGroupMemberRecovery              = "ReplicationGroupMemberRecovery"
 )

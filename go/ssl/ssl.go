@@ -1,3 +1,41 @@
+/*
+Package ssl 提供 Orchestrator 的 SSL/TLS 安全连接支持。
+
+该包实现了以下安全功能：
+
+1. TLS 配置管理
+   - 客户端和服务器 TLS 配置
+   - 证书验证设置
+   - 加密套件选择
+   - 协议版本控制
+
+2. 证书管理
+   - CA 证书加载和验证
+   - 客户端证书处理
+   - 证书链构建
+   - PEM 格式支持
+
+3. 安全连接建立
+   - MySQL TLS 连接
+   - HTTP/HTTPS 服务
+   - 客户端认证
+   - 服务器认证
+
+4. 密码管理
+   - 安全密码输入
+   - PEM 文件密码处理
+   - 内存安全清理
+   - 密码强度验证
+
+5. 兼容性支持
+   - 多种 TLS 版本支持
+   - 向后兼容处理
+   - 配置迁移支持
+   - 错误恢复机制
+
+该模块确保 Orchestrator 在生产环境中的通信安全，支持企业级的
+安全要求和合规性标准。
+*/
 package ssl
 
 import (
@@ -16,7 +54,18 @@ import (
 	"github.com/openark/orchestrator/go/config"
 )
 
-// Determine if a string element is in a string array
+// HasString 检查字符串元素是否在字符串数组中
+// 这是一个通用的工具函数，用于各种字符串匹配场景
+//
+// 参数：
+//   elem: 要查找的字符串元素
+//   arr: 要搜索的字符串数组
+//
+// 返回：
+//   true 如果元素在数组中，否则返回 false
+//
+// 用途：
+//   主要用于验证主机名、证书通用名等安全相关的字符串匹配
 func HasString(elem string, arr []string) bool {
 	for _, s := range arr {
 		if s == elem {
@@ -26,26 +75,48 @@ func HasString(elem string, arr []string) bool {
 	return false
 }
 
-// NewTLSConfig returns an initialized TLS configuration suitable for client
-// authentication. If caFile is non-empty, it will be loaded.
+// NewTLSConfig 返回适用于客户端认证的初始化 TLS 配置
+// 如果 caFile 非空，将会被加载并用于证书验证
+//
+// 参数：
+//   caFile: CA 证书文件路径，用于验证客户端证书
+//   verifyCert: 是否启用客户端证书验证
+//
+// 返回：
+//   配置好的 TLS 配置对象和可能的错误
+//
+// 安全特性：
+//   - 强制使用 TLS 1.2 或更高版本
+//   - 使用安全的默认加密套件
+//   - 优先使用服务器密码套件顺序
+//   - 支持可选的客户端证书验证
 func NewTLSConfig(caFile string, verifyCert bool) (*tls.Config, error) {
 	var c tls.Config
 
-	// Set to TLS 1.2 as a minimum.  This is overridden for mysql communication
+	// 设置最低 TLS 版本为 1.2，MySQL 通信时可能会被覆盖
 	c.MinVersion = tls.VersionTLS12
-	// "If CipherSuites is nil, a default list of secure cipher suites is used"
+
+	// 使用默认的安全加密套件列表
+	// Go 标准库会自动选择安全的套件
 	c.CipherSuites = nil
+
+	// 优先使用服务器的密码套件顺序，提高安全性
 	c.PreferServerCipherSuites = true
 
+	// 配置客户端证书验证
 	if verifyCert {
 		log.Info("verifyCert requested, client certificates will be verified")
 		c.ClientAuth = tls.VerifyClientCertIfGiven
 	}
+
+	// 加载 CA 证书文件
 	caPool, err := ReadCAFile(caFile)
 	if err != nil {
 		return &c, err
 	}
 	c.ClientCAs = caPool
+
+	// 构建名称到证书的映射，提高 TLS 握手性能
 	c.BuildNameToCertificate()
 	return &c, nil
 }

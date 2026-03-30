@@ -14,6 +14,33 @@
    limitations under the License.
 */
 
+/*
+instance_key.go 定义了 MySQL 实例的唯一标识符和相关操作。
+
+InstanceKey 是 Orchestrator 中最基础的数据类型，用于唯一标识一个 MySQL 实例。
+它支持以下功能：
+
+1. 实例标识
+   - 通过主机名和端口号唯一标识 MySQL 实例
+   - 支持 IPv4 和 IPv6 地址格式
+   - 支持主机名解析和反解析
+
+2. 地址解析
+   - 主机名到 IP 地址的解析
+   - 支持 hostname_resolve 和 hostname_unresolve 映射表
+   - 处理各种地址格式的解析
+
+3. 字符串表示
+   - 提供多种字符串格式化方法
+   - 支持 JSON 序列化和反序列化
+   - 便于日志记录和显示
+
+4. 比较操作
+   - 支持实例键的相等性比较
+   - 支持排序操作
+
+该模块是 Orchestrator 拓扑管理的基础，所有拓扑操作都基于 InstanceKey 进行。
+*/
 package inst
 
 import (
@@ -24,22 +51,40 @@ import (
 	"strings"
 )
 
-// InstanceKey is an instance indicator, identifued by hostname and port
+// InstanceKey 是实例标识符，通过主机名和端口来唯一标识一个 MySQL 实例
+// 这是 Orchestrator 中最基础的数据类型，用于所有拓扑操作
 type InstanceKey struct {
-	Hostname string
-	Port     int
+	Hostname string // 主机名或 IP 地址
+	Port     int    // 端口号，通常是 3306
 }
 
 var (
-	ipv4Regexp         = regexp.MustCompile("^([0-9]+)[.]([0-9]+)[.]([0-9]+)[.]([0-9]+)$")
+	// IPv4 地址格式的正则表达式，例如：192.168.1.1
+	ipv4Regexp = regexp.MustCompile("^([0-9]+)[.]([0-9]+)[.]([0-9]+)[.]([0-9]+)$")
+
+	// IPv4 主机名:端口格式的正则表达式，例如：db.example.com:3306
 	ipv4HostPortRegexp = regexp.MustCompile("^([^:]+):([0-9]+)$")
-	ipv4HostRegexp     = regexp.MustCompile("^([^:]+)$")
-	ipv6HostPortRegexp = regexp.MustCompile("^\\[([:0-9a-fA-F]+)\\]:([0-9]+)$") // e.g. [2001:db8:1f70::999:de8:7648:6e8]:3308
-	ipv6HostRegexp     = regexp.MustCompile("^([:0-9a-fA-F]+)$")                // e.g. 2001:db8:1f70::999:de8:7648:6e8
+
+	// 仅主机名格式的正则表达式，例如：db.example.com
+	ipv4HostRegexp = regexp.MustCompile("^([^:]+)$")
+
+	// IPv6 主机名:端口格式的正则表达式，例如：[2001:db8:1f70::999:de8:7648:6e8]:3308
+	ipv6HostPortRegexp = regexp.MustCompile("^\\[([:0-9a-fA-F]+)\\]:([0-9]+)$")
+
+	// 仅 IPv6 地址格式的正则表达式，例如：2001:db8:1f70::999:de8:7648:6e8
+	ipv6HostRegexp = regexp.MustCompile("^([:0-9a-fA-F]+)$")
 )
 
+// detachHint 用于标识已分离的实例的特殊前缀
+// 当实例从拓扑中分离时，主机名会以此前缀开头
 const detachHint = "//"
 
+// newInstanceKey 创建一个新的实例键
+// hostname: 主机名或 IP 地址
+// port: 端口号
+// resolve: 是否执行主机名解析
+//
+// 返回创建的 InstanceKey 和可能的错误
 func newInstanceKey(hostname string, port int, resolve bool) (instanceKey *InstanceKey, err error) {
 	if hostname == "" {
 		return instanceKey, fmt.Errorf("NewResolveInstanceKey: Empty hostname")

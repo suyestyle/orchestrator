@@ -1,3 +1,15 @@
+/*
+store.go 实现了 Raft 存储管理功能。
+
+Store 是 Raft 节点的核心组件，负责：
+1. Raft 实例的创建和管理
+2. 日志存储和状态持久化
+3. 节点间通信和数据同步
+4. 快照创建和恢复
+5. 命令应用和状态机管理
+
+该模块封装了 HashiCorp Raft 的复杂性，为 Orchestrator 提供简洁的分布式一致性接口。
+*/
 package orcraft
 
 import (
@@ -13,24 +25,40 @@ import (
 	"github.com/hashicorp/raft"
 )
 
+// Store 表示一个 Raft 存储节点
+// 管理 Raft 实例的完整生命周期和状态
 type Store struct {
-	raftDir       string
-	raftBind      string
-	raftAdvertise string
+	// Raft 配置信息
+	raftDir       string // Raft 数据存储目录
+	raftBind      string // Raft 节点绑定地址
+	raftAdvertise string // Raft 节点对外广播地址
 
-	raft      *raft.Raft // The consensus mechanism
-	peerStore raft.PeerStore
+	// Raft 核心组件
+	raft      *raft.Raft      // Raft 一致性算法实例
+	peerStore raft.PeerStore  // 对等节点存储
 
-	applier                CommandApplier
-	snapshotCreatorApplier SnapshotCreatorApplier
+	// 应用接口
+	applier                CommandApplier         // 命令应用器，处理 Raft 日志条目
+	snapshotCreatorApplier SnapshotCreatorApplier // 快照创建和应用器
 }
 
+// storeCommand 表示存储在 Raft 日志中的命令
+// 用于在集群节点间复制状态变更
 type storeCommand struct {
-	Op    string `json:"op,omitempty"`
-	Value []byte `json:"value,omitempty"`
+	Op    string `json:"op,omitempty"`    // 操作类型
+	Value []byte `json:"value,omitempty"` // 操作数据
 }
 
-// NewStore inits and returns a new store
+// NewStore 创建并初始化一个新的 Store 实例
+//
+// 参数：
+//   raftDir: Raft 数据存储目录路径
+//   raftBind: 节点绑定的网络地址
+//   raftAdvertise: 节点对外广播的地址
+//   applier: 命令应用器，用于处理 Raft 提交的命令
+//   snapshotCreatorApplier: 快照管理器，用于创建和恢复快照
+//
+// 返回新创建的 Store 实例
 func NewStore(raftDir string, raftBind string, raftAdvertise string, applier CommandApplier, snapshotCreatorApplier SnapshotCreatorApplier) *Store {
 	return &Store{
 		raftDir:                raftDir,

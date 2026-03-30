@@ -14,6 +14,42 @@
    limitations under the License.
 */
 
+/*
+Package http 提供 Orchestrator 的 RESTful API 和 Web 服务功能。
+
+该包实现了完整的 HTTP 接口，包括：
+
+1. RESTful API 端点
+   - 实例发现和监控 API
+   - 拓扑查询和操作 API
+   - 故障恢复和管理 API
+   - 集群管理 API
+   - 维护和审计 API
+
+2. Web 用户界面
+   - 交互式拓扑可视化
+   - 集群状态面板
+   - 故障恢复历史
+   - 配置管理界面
+
+3. 身份认证和授权
+   - 基本认证支持
+   - 自定义认证机制
+   - 操作权限控制
+
+4. 监控和指标
+   - API 调用统计
+   - 性能指标收集
+   - 健康状态检查
+
+5. Raft 集成
+   - 集群状态同步
+   - 领导者选举
+   - 请求转发
+
+API 采用标准的 HTTP 方法和 JSON 格式，提供了完整的 MySQL 拓扑管理功能。
+所有操作都有相应的审计日志和错误处理机制。
+*/
 package http
 
 import (
@@ -43,10 +79,12 @@ import (
 	orcraft "github.com/openark/orchestrator/go/raft"
 )
 
-// APIResponseCode is an OK/ERROR response code
+// APIResponseCode 定义了 API 响应的状态码
+// 用于标识操作是否成功
 type APIResponseCode int
 
 const (
+	// ERROR 表示操作失败
 	ERROR APIResponseCode = iota
 	OK
 )

@@ -14,6 +14,24 @@
    limitations under the License.
 */
 
+/*
+Package config 负责 Orchestrator 的配置管理。
+
+主要功能包括：
+1. 配置文件的读取和解析（支持 JSON 和 INI 格式）
+2. 环境变量替换支持
+3. 配置参数验证和默认值设置
+4. 运行时配置标志管理
+5. 数据库连接配置管理
+
+配置系统支持多种配置源的优先级：
+- 命令行参数（最高优先级）
+- 环境变量
+- 配置文件
+- 默认值（最低优先级）
+
+配置文件支持环境变量占位符，格式为 ${VAR_NAME}，在运行时会被实际的环境变量值替换。
+*/
 package config
 
 import (
@@ -30,70 +48,96 @@ import (
 )
 
 var (
+	// envVariableRegexp 用于匹配配置文件中的环境变量占位符
+	// 支持 ${VAR_NAME} 格式的环境变量替换
 	envVariableRegexp = regexp.MustCompile("[$][{](.*)[}]")
 )
 
 const (
+	// 恢复过程中标记实例不可用的时间（秒），相当于1年
 	LostInRecoveryDowntimeSeconds int = 60 * 60 * 24 * 365
-	DefaultStatusAPIEndpoint          = "/api/status"
+	// 默认状态API端点
+	DefaultStatusAPIEndpoint = "/api/status"
 )
 
+// configurationLoaded 用于同步配置加载状态的通道
 var configurationLoaded chan bool = make(chan bool)
 
 const (
-	HealthPollSeconds                            = 1
-	RaftHealthPollSeconds                        = 10
-	RecoveryPollSeconds                          = 1
-	ActiveNodeExpireSeconds                      = 5
-	BinlogFileHistoryDays                        = 1
-	MaintenanceOwner                             = "orchestrator"
-	AuditPageSize                                = 20
-	MaintenancePurgeDays                         = 7
-	MySQLTopologyMaxPoolConnections              = 3
-	MaintenanceExpireMinutes                     = 10
-	AgentHttpTimeoutSeconds                      = 60
-	PseudoGTIDCoordinatesHistoryHeuristicMinutes = 2
-	DebugMetricsIntervalSeconds                  = 10
-	PseudoGTIDSchema                             = "_pseudo_gtid_"
-	PseudoGTIDIntervalSeconds                    = 5
-	PseudoGTIDExpireMinutes                      = 60
-	StaleInstanceCoordinatesExpireSeconds        = 60
-	CheckAutoPseudoGTIDGrantsIntervalSeconds     = 60
-	SelectTrueQuery                              = "select 1"
-	ConsulKVsPerCluster                          = 5 // KVs: "/", "/hostname", "/ipv4", "/ipv6" and "/port"
-	ConsulMaxTransactionOps                      = 64
+	// 系统健康检查和轮询相关常量
+	HealthPollSeconds     = 1  // 健康检查轮询间隔（秒）
+	RaftHealthPollSeconds = 10 // Raft 健康检查轮询间隔（秒）
+	RecoveryPollSeconds   = 1  // 故障恢复检查轮询间隔（秒）
+
+	// 节点和维护相关常量
+	ActiveNodeExpireSeconds  = 5             // 活跃节点过期时间（秒）
+	MaintenanceOwner         = "orchestrator" // 默认维护操作所有者
+	MaintenancePurgeDays     = 7             // 维护记录保留天数
+	MaintenanceExpireMinutes = 10            // 维护操作过期时间（分钟）
+
+	// 数据库连接和查询相关常量
+	MySQLTopologyMaxPoolConnections = 3           // MySQL 拓扑连接池最大连接数
+	SelectTrueQuery                 = "select 1" // 简单的连接测试查询
+	AgentHttpTimeoutSeconds         = 60         // Agent HTTP 请求超时（秒）
+
+	// 日志和审计相关常量
+	BinlogFileHistoryDays = 1  // 二进制日志文件历史保留天数
+	AuditPageSize         = 20 // 审计记录分页大小
+
+	// Pseudo-GTID 相关常量
+	PseudoGTIDSchema                             = "_pseudo_gtid_"                    // Pseudo-GTID 使用的数据库模式
+	PseudoGTIDIntervalSeconds                    = 5                                  // Pseudo-GTID 注入间隔（秒）
+	PseudoGTIDExpireMinutes                      = 60                                 // Pseudo-GTID 过期时间（分钟）
+	PseudoGTIDCoordinatesHistoryHeuristicMinutes = 2                                  // Pseudo-GTID 坐标历史启发式时间（分钟）
+	CheckAutoPseudoGTIDGrantsIntervalSeconds     = 60                                 // 检查自动 Pseudo-GTID 权限间隔（秒）
+
+	// 其他系统常量
+	StaleInstanceCoordinatesExpireSeconds = 60 // 陈旧实例坐标过期时间（秒）
+	DebugMetricsIntervalSeconds           = 10 // 调试指标输出间隔（秒）
+
+	// Consul 集成相关常量
+	ConsulKVsPerCluster     = 5  // 每个集群在 Consul 中的 KV 数量："/", "/hostname", "/ipv4", "/ipv6", "/port"
+	ConsulMaxTransactionOps = 64 // Consul 事务操作最大数量
 )
 
+// deprecatedConfigurationVariables 列出了已弃用的配置变量
+// 这些变量仍然可以在配置文件中使用，但会发出弃用警告
+// 建议用户迁移到新的配置项或使用默认值
 var deprecatedConfigurationVariables = []string{
-	"DatabaselessMode__experimental",
-	"BufferBinlogEvents",
-	"BinlogFileHistoryDays",
-	"MaintenanceOwner",
-	"ReadLongRunningQueries",
-	"DiscoveryPollSeconds",
-	"ActiveNodeExpireSeconds",
-	"AuditPageSize",
-	"SlaveStartPostWaitMilliseconds",
-	"MySQLTopologyMaxPoolConnections",
-	"MaintenancePurgeDays",
-	"MaintenanceExpireMinutes",
-	"HttpTimeoutSeconds",
-	"AgentAutoDiscover",
-	"PseudoGTIDCoordinatesHistoryHeuristicMinutes",
-	"PseudoGTIDPreferIndependentMultiMatch",
-	"MaxOutdatedKeysToShow",
+	"DatabaselessMode__experimental",             // 实验性无数据库模式（已移除）
+	"BufferBinlogEvents",                         // 缓冲二进制日志事件（功能已重构）
+	"BinlogFileHistoryDays",                      // 二进制日志文件历史天数（现为常量）
+	"MaintenanceOwner",                           // 维护所有者（现为常量）
+	"ReadLongRunningQueries",                     // 读取长时间运行查询（已优化）
+	"DiscoveryPollSeconds",                       // 发现轮询秒数（功能已重构）
+	"ActiveNodeExpireSeconds",                    // 活跃节点过期秒数（现为常量）
+	"AuditPageSize",                              // 审计页面大小（现为常量）
+	"SlaveStartPostWaitMilliseconds",             // 从库启动后等待毫秒数（已优化）
+	"MySQLTopologyMaxPoolConnections",            // MySQL 拓扑最大连接池连接数（现为常量）
+	"MaintenancePurgeDays",                       // 维护清理天数（现为常量）
+	"MaintenanceExpireMinutes",                   // 维护过期分钟数（现为常量）
+	"HttpTimeoutSeconds",                         // HTTP 超时秒数（已重命名）
+	"AgentAutoDiscover",                          // 代理自动发现（功能已重构）
+	"PseudoGTIDCoordinatesHistoryHeuristicMinutes", // Pseudo-GTID 坐标历史启发式分钟数（现为常量）
+	"PseudoGTIDPreferIndependentMultiMatch",      // Pseudo-GTID 偏好独立多重匹配（逻辑已优化）
+	"MaxOutdatedKeysToShow",                      // 显示的最大过期键数（功能已重构）
 }
 
-// Configuration makes for orchestrator configuration input, which can be provided by user via JSON formatted file.
-// Some of the parameteres have reasonable default values, and some (like database credentials) are
-// strictly expected from user.
+// Configuration 定义了 Orchestrator 的完整配置结构
+// 配置可以通过 JSON 格式的配置文件提供给用户
+// 部分参数有合理的默认值，而某些参数（如数据库凭据）需要用户严格提供
 type Configuration struct {
-	Debug                                      bool   // set debug mode (similar to --debug option)
-	EnableSyslog                               bool   // Should logs be directed (in addition) to syslog daemon?
-	ListenAddress                              string // Where orchestrator HTTP should listen for TCP
-	ListenSocket                               string // Where orchestrator HTTP should listen for unix socket (default: empty; when given, TCP is disabled)
-	HTTPAdvertise                              string // optional, for raft setups, what is the HTTP address this node will advertise to its peers (potentially use where behind NAT or when rerouting ports; example: "http://11.22.33.44:3030")
-	AgentsServerPort                           string // port orchestrator agents talk back to
+	// 基本运行配置
+	Debug        bool   // 启用调试模式（类似 --debug 选项）
+	EnableSyslog bool   // 是否将日志（额外）发送到系统日志守护进程
+
+	// 网络监听配置
+	ListenAddress string // Orchestrator HTTP 服务监听的 TCP 地址
+	ListenSocket  string // Orchestrator HTTP 服务监听的 Unix socket 地址（默认为空；指定时禁用 TCP）
+	HTTPAdvertise string // 可选，用于 Raft 设置，此节点向其对等节点广告的 HTTP 地址（可能用于 NAT 后或端口重路由时；例如："http://11.22.33.44:3030"）
+
+	// Agent 相关配置
+	AgentsServerPort string // Orchestrator Agent 回连的端口
 	MySQLTopologyUser                          string
 	MySQLTopologyPassword                      string
 	MySQLTopologyCredentialsConfigFile         string // my.cnf style configuration file from where to pick credentials. Expecting `user`, `password` under `[client]` section

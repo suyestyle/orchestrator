@@ -14,6 +14,44 @@
    limitations under the License.
 */
 
+/*
+Package process 提供 Orchestrator 的进程管理和健康检查功能。
+
+该包实现了以下核心功能：
+
+1. 进程健康监控
+   - 定期健康状态检查
+   - 节点存活性监控
+   - 健康状态缓存管理
+   - 异常状态检测和报告
+
+2. 集群节点管理
+   - 多节点协调
+   - 节点注册和注销
+   - 领导者状态跟踪
+   - 节点通信健康
+
+3. 服务可用性管理
+   - 服务状态监控
+   - 故障检测和报告
+   - 自动恢复机制
+   - 降级保护
+
+4. 选举和一致性
+   - 配合 Raft 模块进行选举
+   - 维护集群一致性
+   - 处理网络分区
+   - 防止脑裂现象
+
+5. 指标收集和报告
+   - 健康检查指标
+   - 性能统计数据
+   - 状态变化事件
+   - 告警和通知
+
+该模块是 Orchestrator 高可用架构的重要组成部分，确保集群的
+稳定运行和服务的持续可用性。
+*/
 package process
 
 import (
@@ -29,15 +67,29 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-var lastHealthCheckUnixNano int64
-var lastGoodHealthCheckUnixNano int64
-var LastContinousCheckHealthy int64
+var (
+	// lastHealthCheckUnixNano 记录最后一次健康检查的时间戳（纳秒）
+	// 使用原子操作确保并发安全
+	lastHealthCheckUnixNano int64
 
-var lastHealthCheckCache = cache.New(config.HealthPollSeconds*time.Second, time.Second)
+	// lastGoodHealthCheckUnixNano 记录最后一次成功健康检查的时间戳（纳秒）
+	// 用于判断服务是否持续健康
+	lastGoodHealthCheckUnixNano int64
 
+	// LastContinousCheckHealthy 记录连续健康检查成功的次数
+	// 用于判断服务稳定性
+	LastContinousCheckHealthy int64
+
+	// lastHealthCheckCache 健康检查结果缓存
+	// 避免频繁的健康检查操作，提高系统性能
+	lastHealthCheckCache = cache.New(config.HealthPollSeconds*time.Second, time.Second)
+)
+
+// NodeHealth 表示集群节点的健康状态信息
+// 用于跟踪和管理集群中各个节点的健康状态
 type NodeHealth struct {
-	Hostname        string
-	Token           string
+	Hostname string // 节点主机名
+	Token    string // 节点认证令牌
 	AppVersion      string
 	FirstSeenActive string
 	LastSeenActive  string

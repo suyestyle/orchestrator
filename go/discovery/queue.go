@@ -15,14 +15,43 @@
 */
 
 /*
+Package discovery 管理 MySQL 实例的自动发现功能。
 
-package discovery manages a queue of discovery requests: an ordered
-queue with no duplicates.
+该包提供了以下核心功能：
 
-push() operation never blocks while pop() blocks on an empty queue.
+1. 发现请求队列管理
+   - 有序队列，无重复元素
+   - 非阻塞的 push() 操作
+   - 阻塞式的 pop() 操作（空队列时）
+   - 并发安全的队列操作
 
+2. 拓扑自动发现
+   - 递归发现 MySQL 复制拓扑
+   - 基于 SHOW SLAVE HOSTS 和 PROCESSLIST
+   - 自动检测新实例和拓扑变化
+   - 智能去重和缓存机制
+
+3. 发现策略优化
+   - 并发发现控制
+   - 发现优先级管理
+   - 错误重试和退避机制
+   - 资源使用限制
+
+4. 指标收集和监控
+   - 发现队列状态监控
+   - 发现性能指标
+   - 错误率统计
+   - 发现延迟跟踪
+
+5. 配置驱动的发现
+   - 发现间隔配置
+   - 并发度控制
+   - 超时时间设置
+   - 黑名单和白名单
+
+该模块是 Orchestrator 拓扑感知能力的基础，确保系统能够
+及时发现和跟踪 MySQL 环境的变化。
 */
-
 package discovery
 
 import (
@@ -34,20 +63,22 @@ import (
 	"github.com/openark/orchestrator/go/inst"
 )
 
-// QueueMetric contains the queue's active and queued sizes
+// QueueMetric 包含队列的活跃和排队大小信息
+// 用于监控发现队列的状态和性能
 type QueueMetric struct {
-	Active int
-	Queued int
+	Active int // 当前正在处理的发现请求数量
+	Queued int // 排队等待处理的发现请求数量
 }
 
-// Queue contains information for managing discovery requests
+// Queue 包含管理发现请求的信息
+// 实现了一个线程安全的、无重复的有序队列
 type Queue struct {
-	sync.Mutex
+	sync.Mutex // 保护并发访问的互斥锁
 
-	name         string
-	done         chan struct{}
-	queue        chan inst.InstanceKey
-	queuedKeys   map[inst.InstanceKey]time.Time
+	name       string                        // 队列名称，用于日志和监控
+	done       chan struct{}                 // 用于通知队列关闭的通道
+	queue      chan inst.InstanceKey         // 发现请求队列
+	queuedKeys map[inst.InstanceKey]time.Time // 跟踪排队的实例键和时间戳，用于去重
 	consumedKeys map[inst.InstanceKey]time.Time
 	metrics      []QueueMetric
 }

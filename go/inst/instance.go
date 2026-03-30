@@ -14,6 +14,22 @@
    limitations under the License.
 */
 
+/*
+Package inst 提供 MySQL 实例管理的核心功能。
+
+主要包含以下组件：
+1. Instance - MySQL 实例的完整表示，包括配置和状态
+2. InstanceKey - 实例的唯一标识符
+3. BinlogCoordinates - 二进制日志位置信息
+4. ReplicationAnalysis - 复制状态分析结果
+5. 各种拓扑操作和故障检测功能
+
+该包是 Orchestrator 的核心，负责：
+- MySQL 实例的发现和监控
+- 复制拓扑的构建和维护
+- 故障检测和分析
+- 拓扑变更和恢复操作
+*/
 package inst
 
 import (
@@ -28,26 +44,38 @@ import (
 	"github.com/openark/orchestrator/go/config"
 )
 
+// ReasonableDiscoveryLatency 定义了合理的服务发现延迟时间
+// 超过这个时间的发现操作被认为是缓慢的
 const ReasonableDiscoveryLatency = 500 * time.Millisecond
 
-// Instance represents a database instance, including its current configuration & status.
-// It presents important replication configuration and detailed replication status.
+// Instance 代表一个数据库实例，包括其当前配置和状态信息
+// 它展示了重要的复制配置和详细的复制状态信息
+// 这是 Orchestrator 中最重要的数据结构，用于跟踪和管理 MySQL 实例
 type Instance struct {
-	Key                          InstanceKey
-	InstanceAlias                string
-	Uptime                       uint
-	ServerID                     uint
-	ServerUUID                   string
-	Version                      string
-	VersionComment               string
-	FlavorName                   string
-	ReadOnly                     bool
-	Binlog_format                string
-	BinlogRowImage               string
-	LogBinEnabled                bool
-	LogSlaveUpdatesEnabled       bool // for API backwards compatibility. Equals `LogReplicationUpdatesEnabled`
-	LogReplicationUpdatesEnabled bool
-	SelfBinlogCoordinates        BinlogCoordinates
+	// 基本标识信息
+	Key           InstanceKey // 实例的唯一标识符（主机名:端口）
+	InstanceAlias string      // 实例别名，用于友好显示
+
+	// 服务器基本信息
+	Uptime        uint   // 服务器运行时间（秒）
+	ServerID      uint   // MySQL server_id，复制中的唯一标识
+	ServerUUID    string // MySQL server_uuid，5.6+ 版本的全局唯一标识
+	Version       string // MySQL 版本号
+	VersionComment string // MySQL 版本注释
+	FlavorName    string // MySQL 分支类型（MySQL、MariaDB、Percona 等）
+
+	// 服务器状态配置
+	ReadOnly bool // 是否为只读模式（read_only 变量）
+
+	// 二进制日志配置
+	Binlog_format                string // 二进制日志格式（STATEMENT、ROW、MIXED）
+	BinlogRowImage               string // 二进制日志行图像模式（FULL、MINIMAL、NOBLOB）
+	LogBinEnabled                bool   // 是否启用二进制日志
+	LogSlaveUpdatesEnabled       bool   // 为了 API 向后兼容性，等同于 LogReplicationUpdatesEnabled
+	LogReplicationUpdatesEnabled bool   // 是否启用复制更新日志
+
+	// 当前二进制日志位置
+	SelfBinlogCoordinates BinlogCoordinates // 当前实例的二进制日志坐标
 	MasterKey                    InstanceKey
 	MasterUUID                   string
 	AncestryUUID                 string

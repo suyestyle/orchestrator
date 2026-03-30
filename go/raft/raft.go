@@ -48,44 +48,78 @@ const (
 
 var RaftNotRunning error = fmt.Errorf("raft is not configured/running")
 var store *Store
-var raftSetupComplete int64
-var ThisHostname string
-var healthRequestAuthenticationTokenCache = cache.New(config.RaftHealthPollSeconds*2*time.Second, time.Second)
-var healthReportsCache = cache.New(config.RaftHealthPollSeconds*2*time.Second, time.Second)
-var healthRequestReportCache = cache.New(time.Second, time.Second)
+var (
+	// raftSetupComplete 标识 Raft 设置是否完成
+	// 使用原子操作确保并发安全
+	raftSetupComplete int64
 
-var fatalRaftErrorChan = make(chan error)
+	// ThisHostname 当前节点的主机名
+	// 用于节点标识和通信
+	ThisHostname string
 
+	// healthRequestAuthenticationTokenCache 健康检查请求认证令牌缓存
+	// 缓存有效期为健康检查间隔的两倍
+	healthRequestAuthenticationTokenCache = cache.New(config.RaftHealthPollSeconds*2*time.Second, time.Second)
+
+	// healthReportsCache 健康报告缓存
+	// 用于缓存各节点的健康状态报告
+	healthReportsCache = cache.New(config.RaftHealthPollSeconds*2*time.Second, time.Second)
+
+	// healthRequestReportCache 健康检查请求报告缓存
+	// 短期缓存，用于去重和限流
+	healthRequestReportCache = cache.New(time.Second, time.Second)
+
+	// fatalRaftErrorChan Raft 致命错误通道
+	// 用于异步报告致命错误
+	fatalRaftErrorChan = make(chan error)
+)
+
+// leaderURI 安全的领导者 URI 管理器
+// 提供线程安全的领导者 URI 访问
 type leaderURI struct {
-	uri string
-	sync.Mutex
+	uri string      // 当前领导者的 URI
+	sync.Mutex      // 保护并发访问的互斥锁
 }
 
-var LeaderURI leaderURI
-var thisLeaderURI string // How this node identifies itself assuming it is the leader
+var (
+	// LeaderURI 全局领导者 URI 管理器
+	LeaderURI leaderURI
 
+	// thisLeaderURI 当前节点作为领导者时的 URI 标识
+	// 用于判断当前节点是否为领导者
+	thisLeaderURI string
+)
+
+// Get 安全地获取当前领导者的 URI
 func (luri *leaderURI) Get() string {
 	luri.Lock()
 	defer luri.Unlock()
 	return luri.uri
 }
 
+// Set 安全地设置领导者的 URI
 func (luri *leaderURI) Set(uri string) {
 	luri.Lock()
 	defer luri.Unlock()
 	luri.uri = uri
 }
 
+// IsThisLeaderURI 判断当前节点是否为领导者
+// 返回 true 表示当前节点是领导者
 func (luri *leaderURI) IsThisLeaderURI() bool {
 	luri.Lock()
 	defer luri.Unlock()
 	return luri.uri == thisLeaderURI
 }
 
+// IsRaftEnabled 检查 Raft 是否已启用
+// 通过检查 store 是否为 nil 来判断
 func IsRaftEnabled() bool {
 	return store != nil
 }
 
+// FatalRaftError 处理 Raft 致命错误
+// 将错误异步发送到错误通道进行处理
 func FatalRaftError(err error) error {
 	if err != nil {
 		go func() { fatalRaftErrorChan <- err }()
