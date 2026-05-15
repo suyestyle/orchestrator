@@ -371,7 +371,7 @@ function openNodeModal(node) {
       $('#node_modal [data-btn-group=gtid-errant-fix]').show();
     }
   }
-  addNodeModalDataAttribute("Semi-sync enforced", booleanString(node.SemiSyncEnforced));
+  addNodeModalDataAttribute("Semi-sync enforced", booleanString(node.SemiSyncPriority));
 
   addNodeModalDataAttribute("Uptime", node.Uptime);
   addNodeModalDataAttribute("Allow TLS", node.AllowTLS);

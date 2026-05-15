@@ -1689,7 +1689,9 @@ function Cluster() {
         instances.forEach(function(instance) {
             if (instance.isMaster) {
                 getData("/api/recently-active-instance-recovery/" + instance.Key.Hostname + "/" + instance.Key.Port, function(recoveries) {
-                    if (!recoveries) {
+                    if (Array.isArray(recoveries) && recoveries.length === 0) {
+                        return
+                    } else if (typeof recoveries === 'object') {
                         return
                     }
                     // Result is an array: either empty (no active recovery) or with multiple entries
@@ -1780,7 +1782,9 @@ function Cluster() {
             });
         });
         getData("/api/recently-active-cluster-recovery/" + currentClusterName(), function(recoveries) {
-            if (!recoveries) {
+            if (Array.isArray(recoveries) && recoveries.length === 0) {
+                return
+            } else if (typeof recoveries === 'object') {
                 return
             }
             // Result is an array: either empty (no active recovery) or with multiple entries
